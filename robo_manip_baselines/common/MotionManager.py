@@ -29,7 +29,7 @@ class MotionManager(object):
         self.joint_pos = self.env.unwrapped.init_qpos[
             self.env.unwrapped.ik_arm_joint_ids
         ].copy()
-        self.forward_kinematics()
+        pin.forwardKinematics(self.pin_model, self.pin_data, self.joint_pos)
         self._original_target_se3 = self.pin_data.oMi[
             self.env.unwrapped.ik_eef_joint_id
         ].copy()
@@ -49,9 +49,6 @@ class MotionManager(object):
         self.gripper_pos = self.env.unwrapped.init_qpos[
             self.env.unwrapped.gripper_action_idx
         ]
-
-    def forward_kinematics(self):
-        pin.forwardKinematics(self.pin_model, self.pin_data, self.joint_pos)
 
     def inverse_kinematics(self):
         """Solve inverse kinematics."""
@@ -74,7 +71,7 @@ class MotionManager(object):
             )
         )
         self.joint_pos = pin.integrate(self.pin_model, self.joint_pos, delta_joint_pos)
-        self.forward_kinematics()
+        pin.forwardKinematics(self.pin_model, self.pin_data, self.joint_pos)
 
     def set_relative_target_se3(self, delta_pos=None, delta_rpy=None):
         """Set the target pose of the end-effector relatively."""

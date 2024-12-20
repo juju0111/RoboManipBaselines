@@ -1,5 +1,4 @@
 from abc import ABCMeta, abstractmethod
-import sys
 import argparse
 import time
 import datetime
@@ -19,8 +18,35 @@ from robo_manip_baselines.common import (
 
 class TeleopBase(metaclass=ABCMeta):
     def __init__(self):
-        # Setup arguments
-        self.setup_args()
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--demo_name", type=str, default=None, help="demonstration name"
+        )
+        parser.add_argument(
+            "--enable_3d_plot", action="store_true", help="whether to enable 3d plot"
+        )
+        parser.add_argument(
+            "--compress_rgb", type=int, default=1, help="whether to compress rgb image"
+        )
+        parser.add_argument(
+            "--compress_depth",
+            type=int,
+            default=0,
+            help="whether to compress depth image (slow)",
+        )
+        parser.add_argument(
+            "--world_idx_list",
+            type=int,
+            nargs="*",
+            help="list of world indexes (if not given, loop through all world indicies)",
+        )
+        parser.add_argument(
+            "--replay_log",
+            type=str,
+            default=None,
+            help="log file path when replay log motion",
+        )
+        self.args = parser.parse_args()
 
         # Setup gym environment
         self.setup_env()
@@ -65,7 +91,29 @@ class TeleopBase(metaclass=ABCMeta):
 
             # Reset
             if self.reset_flag:
-                self.reset()
+                self.motion_manager.reset()
+                if self.args.replay_log is None:
+                    self.data_manager.reset()
+                    if self.args.world_idx_list is None:
+                        world_idx = None
+                    else:
+                        world_idx = self.args.world_idx_list[
+                            self.data_manager.data_idx % len(self.args.world_idx_list)
+                        ]
+                else:
+                    self.data_manager.load_data(self.args.replay_log)
+                    print("- Load teleoperation data: {}".format(self.args.replay_log))
+                    world_idx = self.data_manager.get_data("world_idx").tolist()
+                self.data_manager.setup_sim_world(world_idx)
+                obs, info = self.env.reset()
+                print(
+                    "[{}] data_idx: {}, world_idx: {}".format(
+                        self.demo_name,
+                        self.data_manager.data_idx,
+                        self.data_manager.world_idx,
+                    )
+                )
+                print("- Press the 'n' key to start automatic grasping.")
                 self.reset_flag = False
 
             # Read spacemouse
@@ -98,17 +146,44 @@ class TeleopBase(metaclass=ABCMeta):
                 self.data_manager.status == MotionStatus.TELEOP
                 and self.args.replay_log is None
             ):
-                self.record_data(obs, action, info)  # noqa: F821
+                self.data_manager.append_single_data(
+                    DataKey.TIME, self.data_manager.status_elapsed_duration
+                )
+                self.data_manager.append_single_data(
+                    DataKey.MEASURED_JOINT_POS, self.motion_manager.get_joint_pos(obs)
+                )
+                self.data_manager.append_single_data(DataKey.COMMAND_JOINT_POS, action)
+                self.data_manager.append_single_data(
+                    DataKey.MEASURED_JOINT_VEL, self.motion_manager.get_joint_vel(obs)
+                )
+                self.data_manager.append_single_data(
+                    DataKey.MEASURED_EEF_POSE, self.motion_manager.get_measured_eef(obs)
+                )
+                self.data_manager.append_single_data(
+                    DataKey.COMMAND_EEF_POSE, self.motion_manager.get_command_eef()
+                )
+                self.data_manager.append_single_data(
+                    DataKey.MEASURED_EEF_WRENCH, self.motion_manager.get_eef_wrench(obs)
+                )
+                for camera_name in self.env.unwrapped.camera_names:
+                    self.data_manager.append_single_data(
+                        DataKey.get_rgb_image_key(camera_name),
+                        info["rgb_images"][camera_name],
+                    )
+                    self.data_manager.append_single_data(
+                        DataKey.get_depth_image_key(camera_name),
+                        info["depth_images"][camera_name],
+                    )
 
             # Step environment
             obs, _, _, _, info = self.env.step(action)
 
             # Draw images
-            self.draw_image(info)
+            self.drawImage(info)
 
             # Draw point clouds
             if self.args.enable_3d_plot:
-                self.draw_point_cloud(info)
+                self.drawPointCloud(info)
 
             # Manage status
             self.manage_status()
@@ -121,7 +196,7 @@ class TeleopBase(metaclass=ABCMeta):
             if iteration_duration < self.env.unwrapped.dt:
                 time.sleep(self.env.unwrapped.dt - iteration_duration)
 
-        print("[TeleopBase] Statistics on teleoperation")
+        print("- Statistics on teleoperation")
         if len(iteration_duration_list) > 0:
             iteration_duration_list = np.array(iteration_duration_list)
             print(
@@ -135,72 +210,9 @@ class TeleopBase(metaclass=ABCMeta):
 
         # self.env.close()
 
-    def setup_args(self, parser=None, argv=None):
-        if parser is None:
-            parser = argparse.ArgumentParser()
-
-        parser.add_argument(
-            "--demo_name", type=str, default=None, help="demonstration name"
-        )
-        parser.add_argument(
-            "--enable_3d_plot", action="store_true", help="whether to enable 3d plot"
-        )
-        parser.add_argument(
-            "--compress_rgb", type=int, default=1, help="whether to compress rgb image"
-        )
-        parser.add_argument(
-            "--compress_depth",
-            type=int,
-            default=0,
-            help="whether to compress depth image (slow)",
-        )
-        parser.add_argument(
-            "--world_idx_list",
-            type=int,
-            nargs="*",
-            help="list of world indexes (if not given, loop through all world indicies)",
-        )
-        parser.add_argument(
-            "--replay_log",
-            type=str,
-            default=None,
-            help="log file path when replay log motion",
-        )
-
-        if argv is None:
-            argv = sys.argv
-        self.args = parser.parse_args(argv[1:])
-
     @abstractmethod
     def setup_env(self):
         pass
-
-    def reset(self):
-        self.motion_manager.reset()
-        if self.args.replay_log is None:
-            self.data_manager.reset()
-            if self.args.world_idx_list is None:
-                world_idx = None
-            else:
-                world_idx = self.args.world_idx_list[
-                    self.data_manager.data_idx % len(self.args.world_idx_list)
-                ]
-        else:
-            self.data_manager.load_data(self.args.replay_log)
-            print(
-                "[TeleopBase] Load teleoperation data: {}".format(self.args.replay_log)
-            )
-            world_idx = self.data_manager.get_data("world_idx").tolist()
-        self.data_manager.setup_sim_world(world_idx)
-        obs, info = self.env.reset()
-        print(
-            "[{}] data_idx: {}, world_idx: {}".format(
-                self.demo_name,
-                self.data_manager.data_idx,
-                self.data_manager.world_idx,
-            )
-        )
-        print("[TeleopBase] Press the 'n' key to start automatic grasping.")
 
     def set_arm_command(self):
         if self.data_manager.status == MotionStatus.TELEOP:
@@ -237,37 +249,7 @@ class TeleopBase(metaclass=ABCMeta):
             ):
                 self.motion_manager.gripper_pos -= self.gripper_scale
 
-    def record_data(self, obs, action, info):
-        self.data_manager.append_single_data(
-            DataKey.TIME, self.data_manager.status_elapsed_duration
-        )
-        self.data_manager.append_single_data(
-            DataKey.MEASURED_JOINT_POS, self.motion_manager.get_joint_pos(obs)
-        )
-        self.data_manager.append_single_data(DataKey.COMMAND_JOINT_POS, action)
-        self.data_manager.append_single_data(
-            DataKey.MEASURED_JOINT_VEL, self.motion_manager.get_joint_vel(obs)
-        )
-        self.data_manager.append_single_data(
-            DataKey.MEASURED_EEF_POSE, self.motion_manager.get_measured_eef(obs)
-        )
-        self.data_manager.append_single_data(
-            DataKey.COMMAND_EEF_POSE, self.motion_manager.get_command_eef()
-        )
-        self.data_manager.append_single_data(
-            DataKey.MEASURED_EEF_WRENCH, self.motion_manager.get_eef_wrench(obs)
-        )
-        for camera_name in self.env.unwrapped.camera_names:
-            self.data_manager.append_single_data(
-                DataKey.get_rgb_image_key(camera_name),
-                info["rgb_images"][camera_name],
-            )
-            self.data_manager.append_single_data(
-                DataKey.get_depth_image_key(camera_name),
-                info["depth_images"][camera_name],
-            )
-
-    def draw_image(self, info):
+    def drawImage(self, info):
         status_image = self.data_manager.get_status_image()
         rgb_images = []
         depth_images = []
@@ -296,7 +278,7 @@ class TeleopBase(metaclass=ABCMeta):
         )
         cv2.imshow("image", cv2.cvtColor(window_image, cv2.COLOR_RGB2BGR))
 
-    def draw_point_cloud(self, info):
+    def drawPointCloud(self, info):
         dist_thre_list = (3.0, 3.0, 0.8)  # [m]
         for camera_idx, camera_name in enumerate(self.env.unwrapped.camera_names):
             point_cloud_skip = 10
@@ -356,7 +338,7 @@ class TeleopBase(metaclass=ABCMeta):
             reach_duration = 0.3  # [s]
             if self.data_manager.status_elapsed_duration > reach_duration:
                 print(
-                    "[TeleopBase] Press the 'n' key to start teleoperation after the gripper is closed."
+                    "- Press the 'n' key to start teleoperation after the gripper is closed."
                 )
                 self.data_manager.go_to_next_status()
         elif self.data_manager.status == MotionStatus.GRASP:
@@ -367,16 +349,16 @@ class TeleopBase(metaclass=ABCMeta):
                     pyspacemouse.open()
                 self.teleop_time_idx = 0
                 if self.args.replay_log is None:
-                    print("[TeleopBase] Press the 'n' key to finish teleoperation.")
+                    print("- Press the 'n' key to finish teleoperation.")
                 else:
-                    print("[TeleopBase] Start to replay the log motion.")
+                    print("- Start to replay the log motion.")
                 self.data_manager.go_to_next_status()
         elif self.data_manager.status == MotionStatus.TELEOP:
             self.teleop_time_idx += 1
             if self.args.replay_log is None:
                 if key == ord("n"):
                     print(
-                        "[TeleopBase] Press the 's' key if the teleoperation succeeded,"
+                        "- Press the 's' key if the teleoperation succeeded,"
                         " or the 'f' key if it failed. (duration: {:.1f} [s])".format(
                             self.data_manager.status_elapsed_duration
                         )
@@ -386,7 +368,7 @@ class TeleopBase(metaclass=ABCMeta):
                 if self.teleop_time_idx == len(self.data_manager.get_data("time")):
                     self.teleop_time_idx -= 1
                     print(
-                        "[TeleopBase] The log motion has finished replaying. Press the 'n' key to exit."
+                        "- The log motion has finished replaying. Press the 'n' key to exit."
                     )
                     self.data_manager.go_to_next_status()
         elif self.data_manager.status == MotionStatus.END:
@@ -396,7 +378,7 @@ class TeleopBase(metaclass=ABCMeta):
                     self.save_data()
                     self.reset_flag = True
                 elif key == ord("f"):
-                    print("[TeleopBase] Teleoperation failed: Reset without saving")
+                    print("- Teleoperation failed: Reset without saving")
                     self.reset_flag = True
             else:
                 if key == ord("n"):
@@ -416,18 +398,16 @@ class TeleopBase(metaclass=ABCMeta):
             )
         )
         if self.args.compress_rgb:
-            print("[TeleopBase] Compress rgb images")
+            print("- Compress rgb images")
             for camera_name in self.env.unwrapped.camera_names:
                 self.data_manager.compress_data(
                     DataKey.get_rgb_image_key(camera_name), "jpg"
                 )
         if self.args.compress_depth:
-            print("[TeleopBase] Compress depth images")
+            print("- Compress depth images")
             for camera_name in self.env.unwrapped.camera_names:
                 self.data_manager.compress_data(
                     DataKey.get_depth_image_key(camera_name), "exr"
                 )
         self.data_manager.save_data(filename)
-        print(
-            "[TeleopBase] Teleoperation succeeded: Save the data as {}".format(filename)
-        )
+        print("- Teleoperation succeeded: Save the data as {}".format(filename))

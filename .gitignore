@@ -12,3 +12,7 @@ GPATH
 GRTAGS
 GSYMS
 GTAGS
+
+robo_manip_baselines/diffusion_policy/ckpts/
+robo_manip_baselines/act/ckpts/
+third_party/*

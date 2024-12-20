@@ -10,6 +10,8 @@ from diffusion_policy.common.pytorch_util import dict_apply
 from robo_manip_baselines.common.rollout import RolloutBase
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+# sys.path.append(os.path.join(os.path.dirname(__file__), "../../../third_party/diffusion_policy"))
+print("Path : ", os.path.join(os.path.dirname(__file__), "../../../third_party/diffusion_policy") )
 
 
 class RolloutDiffusionPolicy(RolloutBase):

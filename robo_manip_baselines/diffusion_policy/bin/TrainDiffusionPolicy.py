@@ -7,6 +7,10 @@ from torch.utils.data import DataLoader
 import copy
 import tqdm
 import numpy as np
+import sys 
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../third_party/diffusion_policy"))
+
 from diffusion_policy.workspace.train_diffusion_unet_hybrid_workspace import (
     TrainDiffusionUnetHybridWorkspace,
 )

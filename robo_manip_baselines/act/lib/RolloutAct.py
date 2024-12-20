@@ -37,6 +37,8 @@ class RolloutAct(RolloutBase):
             type=int,
             help="feedforward dimension of ACT policy",
         )
+        parser.add_argument('--state_dim', action='store', type=int, help='state_dim', required=True)
+        parser.add_argument('--task_name', action='store', type=str, help='task_name', required=True)
 
         super().setup_args(parser)
 
@@ -55,8 +57,8 @@ class RolloutAct(RolloutBase):
         # Set policy parameters
         self.state_dim = len(self.stats["joint_mean"])
         self.action_dim = len(self.stats["action_mean"])
-        DETRVAE.set_state_dim(self.state_dim)
-        DETRVAE.set_action_dim(self.action_dim)
+        # DETRVAE.set_state_dim(self.state_dim)
+        # DETRVAE.set_action_dim(self.action_dim)
 
         # Define policy
         self.policy_config = {
@@ -70,6 +72,7 @@ class RolloutAct(RolloutBase):
             "dec_layers": 7,
             "nheads": 8,
             "camera_names": ["front"],
+            "state_dim"  : self.args.state_dim, 
         }
         self.policy = ACTPolicy(self.policy_config)
 

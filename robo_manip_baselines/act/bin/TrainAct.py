@@ -14,10 +14,19 @@ from utils import compute_dict_mean, set_seed, detach_dict
 from policy import ACTPolicy
 from detr.models.detr_vae import DETRVAE
 
+# import detr.models.detr_vae
+
+# print(detr.models.detr_vae.DETRVAE.__module__)
+# print(detr.models.detr_vae.__file__)
+# print("Detr-vae : ", DETRVAE)
 
 class TrainAct(object):
-    def __init__(self):
-        self.setup_args()
+    def __init__(self, jupyter=False, **kwargs):
+        if not jupyter:
+            self.setup_args()
+        else:
+            print("kwargs : ", kwargs)
+            self.setup_args_jupyter(kwargs)
 
         self.setup_dataset()
 
@@ -65,9 +74,73 @@ class TrainAct(object):
             type=int,
             help="feedforward dimension of ACT policy",
         )
+        parser.add_argument('--ckpt_dir', action='store', type=str, default="./output", help='ckpt_dir')
+        parser.add_argument('--policy_class', action='store', type=str, default="policy_class", help='policy_class, capitalize')
+        parser.add_argument('--task_name', action='store', type=str, help='task_name', required=True)
+        parser.add_argument('--state_dim', action='store', type=int, help='state_dim', required=True)
+        parser.add_argument('--use_jupyter', action='store', type=bool, help='state_dim', default=False)
 
         self.args = parser.parse_args()
 
+
+    def setup_args_jupyter(self, kwargs:dict):
+        parser = argparse.ArgumentParser(description="Train ACT")
+
+        parser.add_argument(
+            "--dataset_dir",
+            default="./data/",
+            type=str,
+            help="dataset_dir",
+        )
+        parser.add_argument(
+            "--log_dir",
+            default="./log/",
+            type=str,
+            help="log_dir",
+        )
+        parser.add_argument(
+            "--camera_names",
+            action="store",
+            type=lambda x: list(map(str, x.split(","))),
+            help="camera_names",
+            required=False,
+            default=["front"],
+        )
+        parser.add_argument("--batch_size", default=8, type=int, help="batch_size")
+        parser.add_argument("--seed", default=0, type=int, help="seed")
+        parser.add_argument("--num_epochs", default=1000, type=int, help="num_epochs")
+        parser.add_argument("--lr", default=1e-5, type=float, help="lr")
+
+        # for ACT
+        parser.add_argument("--kl_weight", default=10, type=int, help="KL weight")
+        parser.add_argument(
+            "--chunk_size", default=100, type=int, help="action chunking size"
+        )
+        parser.add_argument(
+            "--hidden_dim", default=512, type=int, help="hidden dimension of ACT policy"
+        )
+        parser.add_argument(
+            "--dim_feedforward",
+            default=3200,
+            type=int,
+            help="feedforward dimension of ACT policy",
+        )
+        parser.add_argument('--ckpt_dir', action='store', type=str, default="./output", help='ckpt_dir')
+        parser.add_argument('--policy_class', action='store', type=str, default="policy_class", help='policy_class, capitalize')
+        parser.add_argument('--task_name', action='store', type=str, help='task_name', default="")
+        parser.add_argument('--state_dim', action='store', type=int, help='state_dim', default=7)
+        parser.add_argument('--use_jupyter', action='store', type=bool, help='state_dim', default=True)
+
+        self.args = parser.parse_args([])
+
+        # kwargs를 self.args에 동적으로 업데이트
+        for key, value in kwargs.items():
+            if hasattr(self.args, key):
+                print(f"Updating {key} to {value}")
+            else:
+                print(f"Adding new argument {key} with value {value}")
+            setattr(self.args, key, value)
+        
     def setup_dataset(self):
         set_seed(1)
 
@@ -87,8 +160,11 @@ class TrainAct(object):
 
         state_dim = self.train_dataloader.dataset[0][1].shape[0]
         action_dim = self.train_dataloader.dataset[0][2].shape[1]
-        DETRVAE.set_state_dim(state_dim)
-        DETRVAE.set_action_dim(action_dim)
+
+        print("state dim : ", state_dim,"action dim : ",action_dim)
+
+        # DETRVAE.set_state_dim(state_dim)
+        # DETRVAE.set_action_dim(action_dim)
 
         lr_backbone = 1e-5
         backbone = "resnet18"
@@ -96,17 +172,19 @@ class TrainAct(object):
         dec_layers = 7
         nheads = 8
         policy_config = {
-            "lr": self.args.lr,
-            "num_queries": self.args.chunk_size,
-            "kl_weight": self.args.kl_weight,
-            "hidden_dim": self.args.hidden_dim,
-            "dim_feedforward": self.args.dim_feedforward,
-            "lr_backbone": lr_backbone,
-            "backbone": backbone,
-            "enc_layers": enc_layers,
-            "dec_layers": dec_layers,
-            "nheads": nheads,
-            "camera_names": self.args.camera_names,
+            "lr"                : self.args.lr,
+            "num_queries"       : self.args.chunk_size,
+            "kl_weight"         : self.args.kl_weight,
+            "hidden_dim"        : self.args.hidden_dim,
+            "dim_feedforward"   : self.args.dim_feedforward,
+            "lr_backbone"       : lr_backbone,
+            "backbone"          : backbone,
+            "enc_layers"        : enc_layers,
+            "dec_layers"        : dec_layers,
+            "nheads"            : nheads,
+            "camera_names"      : self.args.camera_names,
+            "state_dim"         : self.args.state_dim, 
+            "use_jupyter"       : self.args.use_jupyter,
         }
 
         self.policy = ACTPolicy(policy_config)
@@ -143,6 +221,7 @@ class TrainAct(object):
                 self.policy.eval()
                 epoch_dicts = []
                 for batch_idx, data in enumerate(self.val_dataloader):
+                    # print("val data " , data)
                     forward_dict = self.forward_pass(data)
                     epoch_dicts.append(forward_dict)
                 epoch_summary = compute_dict_mean(epoch_dicts)
@@ -165,6 +244,7 @@ class TrainAct(object):
             self.policy.train()
             self.optimizer.zero_grad()
             for batch_idx, data in enumerate(self.train_dataloader):
+                # print("train data " , data)
                 forward_dict = self.forward_pass(data)
                 # backward
                 loss = forward_dict["loss"]
@@ -208,6 +288,7 @@ class TrainAct(object):
 
     def forward_pass(self, data):
         image_data, joint_data, action_data, is_pad = data
+        # print("img data : ", image_data.shape, joint_data.shape, action_data.shape, is_pad.shape)
         image_data, joint_data, action_data, is_pad = (
             image_data.cuda(),
             joint_data.cuda(),

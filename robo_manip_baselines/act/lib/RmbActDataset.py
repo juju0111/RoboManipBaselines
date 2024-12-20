@@ -12,6 +12,7 @@ e = IPython.embed
 @lru_cache(maxsize=128)
 def load_array(dir_path, glob_pattern):
     globbed_list = list(dir_path.glob(glob_pattern))
+    print("globbed_list : ", globbed_list)
     assert len(globbed_list) == 1
     return np.load(globbed_list[0])
 
@@ -30,7 +31,7 @@ class RmbActDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, episode_id):
         sample_full_episode = False  # hardcode
-
+        print("self.dataset_dir ", self.dataset_dir)
         original_action = load_array(self.dataset_dir, "**/actions.npy")[episode_id]
         original_action_shape = original_action.shape
         episode_len = original_action_shape[0]
@@ -38,6 +39,8 @@ class RmbActDataset(torch.utils.data.Dataset):
             start_ts = 0
         else:
             start_ts = np.random.choice(episode_len)
+        
+        print("start_ts : ", start_ts)
         # get observation at start_ts only
         joint = load_array(self.dataset_dir, "**/joints.npy")[episode_id][start_ts]
         image_dict = dict()

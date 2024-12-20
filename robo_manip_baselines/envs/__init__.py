@@ -18,10 +18,6 @@ register(
     id="robo_manip_baselines/MujocoUR5eClothEnv-v0",
     entry_point="robo_manip_baselines.envs.mujoco:MujocoUR5eClothEnv",
 )
-register(
-    id="robo_manip_baselines/MujocoUR5eInsertEnv-v0",
-    entry_point="robo_manip_baselines.envs.mujoco:MujocoUR5eInsertEnv",
-)
 
 ## Xarm7
 register(

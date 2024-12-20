@@ -32,13 +32,6 @@ $ python bin/TeleopMujocoUR5eCloth.py
 ```
 https://github.com/user-attachments/assets/4c78f4ff-8b77-4f2d-be7b-755a09227f5f
 
-#### MujocoUR5eInsertEnv
-Task to insert a pin into a hole.
-```console
-$ python bin/TeleopMujocoUR5eInsert.py
-```
-https://github.com/user-attachments/assets/5ca1eafe-f818-4efb-a012-6db92990ad14
-
 ### xArm7
 #### MujocoXarm7CableEnv
 Task to pass the cable between two poles.
